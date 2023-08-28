@@ -1,0 +1,71 @@
+{
+  "name": "moleculer-mongobubble",
+  "version": "0.3.0",
+  "description": "A Moleculer module for generating CRUD APIs using MongoBubble.",
+  "readme": "README.md",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "docs/",
+    "README.md"
+  ],
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "build": "npm run create-index; npm run ts:build",
+    "create-index": "npx ctix single -p ./tsconfig.json -v -m -r -x --useUpperFirst",
+    "release-rc": "npm run release -- --prerelease rc",
+    "release": "npx standard-version",
+    "lint": "eslint ./src/*.ts --format stylish",
+    "ts:lint": "tsc --noEmit",
+    "ts:build": "rimraf dist; mkdir dist; tsc",
+    "test": "npx jest --detectOpenHandles"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/ggondim/moleculer-mongobubble.git"
+  },
+  "keywords": [
+    "Moleculer",
+    "MongoBubble",
+    "MongoDB"
+  ],
+  "author": {
+    "email": "gustavospgondim@gmail.com",
+    "name": "Gustavo Gondim",
+    "url": "https://github.com/ggondim"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ggondim/moleculer-mongobubble/issues"
+  },
+  "homepage": "https://github.com/ggondim/moleculer-mongobubble#readme",
+  "devDependencies": {
+    "@commitlint/cli": "^17.7.1",
+    "@commitlint/config-conventional": "^17.7.0",
+    "@jest/globals": "^29.6.4",
+    "@types/node": "^20.5.6",
+    "@typescript-eslint/eslint-plugin": "^6.4.1",
+    "@typescript-eslint/parser": "^6.4.1",
+    "ctix": "^0.6.0",
+    "eslint": "^8.47.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-config-airbnb-typescript": "^17.1.0",
+    "eslint-plugin-eslint-comments": "^3.2.0",
+    "eslint-plugin-import": "^2.28.1",
+    "husky": "^8.0.3",
+    "rimraf": "^5.0.1",
+    "standard-version": "^9.5.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@mongobubble/core": "^1.1.1",
+    "bson": "^5.4.0",
+    "moleculer": "^0.14.31",
+    "mongobubble": "^1.0.4",
+    "mongodb": "^5.8.1"
+  }
+}
