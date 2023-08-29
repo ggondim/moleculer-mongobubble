@@ -27,16 +27,16 @@ export default UsersService;
 
 This code will generate the following API actions:
 
-| Action name | Method | Route | MongoBubble method | Query params |
-| --- | --- | --- | --- | --- |
-| list | GET | `/api/v1/users` | `list()`, `listDrafts()` and `listArchive()` | ?drafts=true&archive=true
-| getById | GET | `/api/v1/users/:id` | `get(id)` |
-| insertOne | POST | `/api/v1/users` | `insertOne()` |
-| patchOne | PATCH | `/api/v1/users/:id` | `patchOne()` |
-| replaceOne | PUT | `/api/v1/users/:id` | `replaceOne()` |
-| deleteOne | DELETE | `/api/v1/users/:id` | `deleteOne()` |
-| archive | PUT | `/api/v1/users/:id/archive` |  |
-| publish | PUT | `/api/v1/users/:id/publish` |  |
+| Action name | Method | Route | MongoBubble method | Query params | Emits |
+| --- | --- | --- | --- | --- | --- |
+| list | GET | `/api/v1/users` | `list()`, `listDrafts()` and `listArchive()` | ?drafts=true&archive=true |  |
+| getById | GET | `/api/v1/users/:id` | `get(id)` | | |
+| insertOne | POST | `/api/v1/users` | `insertOne()` | | `users.created` |
+| patchOne | PATCH | `/api/v1/users/:id` | `patchOne()` | | `users.updated` |
+| replaceOne | PUT | `/api/v1/users/:id` | `replaceOne()` | | `users.updated` |
+| deleteOne | DELETE | `/api/v1/users/:id` | `deleteOne()` | | `users.deleted` |
+| archive | PUT | `/api/v1/users/:id/archive` |  | | `users.archived` |
+| publish | PUT | `/api/v1/users/:id/publish` |  | | `users.published` |
 
 ## Connections
 
@@ -61,11 +61,15 @@ You probably won't need to set this property to `false` if you're using a single
 
 When using the global client, the connection will be automatically closed when the service is stopped.
 
+You can access the global client using the internal method `getGlobalClient()` of the service.
+
 ### `reuseLocalRepository` property
 
 If you set `reuseLocalRepository` to `false`, a new MongoBubble repository will be created for each action invocation within the same service.
 
 This is useful only if you need to use different repositories for the same entity in the same service.
+
+You can access the local repository using the internal method `getRepository()` of the service.
 
 ## Repository and plugin options
 
