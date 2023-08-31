@@ -160,7 +160,7 @@ export default function createDbServiceMixin<
         },
       },
 
-      patchOne: {
+      patchOneById: {
         rest: 'PATCH /:id',
         params: {
           id: { type: 'string' },
@@ -171,6 +171,29 @@ export default function createDbServiceMixin<
           const result = await repository.patchOne({
             _id: ctx.params.params.id,
           }, EJSON.deserialize(ctx.params.body));
+
+          const serialized = EJSON.serialize(result);
+
+          ctx.broker.emit(`${ctx.service?.name}.updated`, serialized);
+
+          return serialized;
+        },
+      },
+
+      patchOne: {
+        rest: 'PATCH /',
+        params: {
+          query: { type: 'object' },
+          upsert: { type: 'boolean', optional: true },
+        },
+        handler: async (ctx: Context<Document>) => {
+          const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
+
+          const options = ctx.params.upsert ? { upsert: true } : {};
+
+          const result = await repository.patchOne({
+            _id: ctx.params.params.id,
+          }, EJSON.deserialize(ctx.params.body), options);
 
           const serialized = EJSON.serialize(result);
 

@@ -32,7 +32,8 @@ This code will generate the following API actions:
 | list | GET | `/api/v1/users` | `list()`, `listDrafts()` and `listArchive()` | ?drafts=true&archive=true |  |
 | getById | GET | `/api/v1/users/:id` | `get(id)` | | |
 | insertOne | POST | `/api/v1/users` | `insertOne()` | | `users.created` |
-| patchOne | PATCH | `/api/v1/users/:id` | `patchOne()` | | `users.updated` |
+| patchOneById | PATCH | `/api/v1/users/:id` | `patchOne()` | | `users.updated` |
+| patchOne | PATCH | `/api/v1/users/:id` | `patchOne()` | ?upsert=true | `users.updated` |
 | replaceOne | PUT | `/api/v1/users/:id` | `replaceOne()` | | `users.updated` |
 | deleteOne | DELETE | `/api/v1/users/:id` | `deleteOne()` | | `users.deleted` |
 | archive | PUT | `/api/v1/users/:id/archive` |  | | `users.archived` |
