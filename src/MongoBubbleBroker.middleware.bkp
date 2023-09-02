@@ -1,0 +1,22 @@
+import { EJSON } from 'bson';
+import { inspect } from 'util';
+
+const middleware = {
+  name: 'MongoBubbleBrokerMiddleware',
+
+  call(next) {
+    return (actionName, params, opts) => {
+      const p = EJSON.serialize(params);
+      console.log('opts 1', inspect(opts));
+      return next(actionName, p, opts).then((res, ...args) => {
+        console.log('opts 2', inspect(opts));
+        if (opts.parentCtx.service.name === 'api') {
+          return res;
+        }
+        return EJSON.deserialize(res);
+      });
+    };
+  },
+};
+
+export default middleware;

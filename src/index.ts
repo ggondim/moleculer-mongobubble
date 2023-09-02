@@ -1,4 +1,4 @@
-// created from ctix 2023-08-31 16:52:18
+// created from ctix 2023-09-02 20:15:23
 
-export * from './MongoBubble.mixin';
-export { default as MongoBubbleMixin } from './MongoBubble.mixin';
+export * from './MongoBubbleService.mixin';
+export { default as MongoBubbleServiceMixin } from './MongoBubbleService.mixin';

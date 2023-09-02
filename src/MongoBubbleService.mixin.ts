@@ -1,3 +1,6 @@
+/* eslint-disable eslint-comments/disable-enable-pair */
+/* eslint-disable eslint-comments/no-unlimited-disable */
+/* eslint-disable */
 import {
   ClonableConstructor, MongoRepositoryOptions, PreventedResult, PreventedResultError,
 } from '@mongobubble/core';
@@ -5,6 +8,7 @@ import { ObjectId, EJSON } from 'bson';
 import { ServiceSchema, Context } from 'moleculer';
 import { EntityWithLifecycle, LifecyclePluginOptions, MongoBubble } from 'mongobubble';
 import { MongoClient, Document } from 'mongodb';
+import { inspect } from 'util';
 
 let GLOBAL_CLIENT: MongoClient;
 
@@ -36,7 +40,7 @@ export default function createDbServiceMixin<
 
     mongobubbleMixinOptions: mixinOptions,
 
-    repository: undefined,
+    repository: null,
 
     async created(this): Promise<void> {
       mixinOptions.reuseGlobalClient = typeof mixinOptions.reuseGlobalClient === 'undefined'
@@ -108,6 +112,7 @@ export default function createDbServiceMixin<
 
       list: {
         rest: 'GET /',
+        mergeParams: true,
         params: {
           drafts: { type: 'boolean', optional: true },
           archived: { type: 'boolean', optional: true },
@@ -139,20 +144,29 @@ export default function createDbServiceMixin<
 
       getById: {
         rest: 'GET /:id',
+        mergeParams: true,
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository();
-          const result = await repository.get(ctx.params.params.id);
+          const result = await repository.get(ctx.params.id);
+
+          if (!result) {
+            // eslint-ignore-next-line
+            ctx.meta["$statusCode"] = 404;
+            return {};
+          }
           return EJSON.serialize(result);
         },
       },
 
       insertOne: {
         rest: 'POST /',
+        mergeParams: true,
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
 
-          const result = await repository.insertOne(EJSON.deserialize(ctx.params.body));
+          const result = await repository.insertOne(EJSON.deserialize(ctx.params));
           const serialized = EJSON.serialize(result);
+
 
           ctx.broker.emit(`${ctx.service?.name}.created`, serialized);
 
@@ -160,17 +174,33 @@ export default function createDbServiceMixin<
         },
       },
 
-      patchOneById: {
+      patchOneByIdRest: {
         rest: 'PATCH /:id',
+        mergeParams: false,
+        params: {
+          body: { type: 'object' },
+        },
+        handler: async (ctx: Context<Document>) => {
+          (() => { })();
+          return ctx.call(`${ctx.service?.name}.patchOneById`, {
+            id: ctx.params.params.id,
+            patch: ctx.params.body,
+          });
+        },
+      },
+
+      patchOneById: {
+        visibility: 'public',
         params: {
           id: { type: 'string' },
+          patch: { type: 'object' },
         },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
 
           const result = await repository.patchOne({
-            _id: ctx.params.params.id,
-          }, EJSON.deserialize(ctx.params.body));
+            _id: ctx.params.id,
+          }, EJSON.deserialize(ctx.params.patch));
 
           const serialized = EJSON.serialize(result);
 
@@ -180,20 +210,44 @@ export default function createDbServiceMixin<
         },
       },
 
-      patchOne: {
+      patchOneRest: {
         rest: 'PATCH /',
+        mergeParams: false,
         params: {
-          query: { type: 'object' },
+          // this validation is breaking moleculer
+          // query: {
+          //   filter: { type: 'object' },
+          //   upsert: { type: 'boolean', optional: true },
+          // },
+          body: { type: 'object' },
+        },
+        handler: async (ctx: Context<Document>) => {
+          (() => { })();
+          return ctx.call(`${ctx.service?.name}.patchOne`, {
+            filter: ctx.params.params.filter,
+            upsert: ctx.params.params.upsert,
+            patch: ctx.params.body,
+          });
+        },
+      },
+
+      patchOne: {
+        visibility: 'public',
+        params: {
+          filter: { type: 'object' },
           upsert: { type: 'boolean', optional: true },
+          patch: { type: 'object' },
         },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
 
           const options = ctx.params.upsert ? { upsert: true } : {};
 
-          const result = await repository.patchOne({
-            _id: ctx.params.params.id,
-          }, EJSON.deserialize(ctx.params.body), options);
+          const result = await repository.patchOne(
+            EJSON.deserialize(ctx.params.filter),
+            EJSON.deserialize(ctx.params.patch),
+            options,
+          );
 
           const serialized = EJSON.serialize(result);
 
@@ -203,14 +257,26 @@ export default function createDbServiceMixin<
         },
       },
 
-      replaceOne: {
+      replaceOneRest: {
         rest: 'PUT /:id',
+        mergeParams: false,
         params: {
-          id: { type: 'string' },
+          body: { type: 'object' },
+        },
+        handler: async (ctx: Context<Document>) => {
+          (() => { })();
+          return ctx.call(`${ctx.service?.name}.replaceOne`, ctx.params.body);
+        },
+      },
+
+      replaceOne: {
+        visibility: 'public',
+        params: {
+          document: { type: 'object' },
         },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
-          const result = await repository.replaceOne(EJSON.deserialize(ctx.params.body));
+          const result = await repository.replaceOne(EJSON.deserialize(ctx.params.document));
           const serialized = EJSON.serialize(result);
 
           ctx.broker.emit(`${ctx.service?.name}.updated`, serialized);
@@ -221,12 +287,13 @@ export default function createDbServiceMixin<
 
       deleteOne: {
         rest: 'DELETE /:id',
+        mergeParams: true,
         params: {
           id: { type: 'string' },
         },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
-          const result = await repository.deleteOne(ctx.params.params.id);
+          const result = await repository.deleteOne(ctx.params.id);
           const serialized = EJSON.serialize(result);
 
           ctx.broker.emit(`${ctx.service?.name}.deleted`, serialized);
@@ -237,12 +304,13 @@ export default function createDbServiceMixin<
 
       publish: {
         rest: 'PUT /:id/publish',
+        mergeParams: true,
         params: {
           id: { type: 'string' },
         },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository();
-          const entity = await repository.get(ctx.params.params.id);
+          const entity = await repository.get(ctx.params.id);
           const patch = entity.publish();
           const result = await repository.patchOne({ _id: entity._id }, patch);
           const serialized = EJSON.serialize(result);
@@ -255,12 +323,13 @@ export default function createDbServiceMixin<
 
       archive: {
         rest: 'PUT /:id/archive',
+        mergeParams: true,
         params: {
           id: { type: 'string' },
         },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository();
-          const entity = await repository.get(ctx.params.params.id);
+          const entity = await repository.get(ctx.params.id);
           const patch = entity.archive();
           const result = await repository.patchOne({ _id: entity._id }, patch);
           const serialized = EJSON.serialize(result);
