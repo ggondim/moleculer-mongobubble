@@ -1,6 +1,6 @@
 {
   "name": "moleculer-mongobubble",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A Moleculer module for generating CRUD APIs using MongoBubble.",
   "readme": "README.md",
   "main": "dist/index.js",
