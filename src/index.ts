@@ -1,4 +1,5 @@
-// created from ctix 2023-09-02 20:21:40
+// created from ctix 2023-09-07 16:30:10
 
 export * from './MongoBubbleService.mixin';
+export { default as EjsonServiceMixin } from './EjsonService.mixin';
 export { default as MongoBubbleServiceMixin } from './MongoBubbleService.mixin';

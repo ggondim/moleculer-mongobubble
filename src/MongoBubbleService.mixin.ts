@@ -4,8 +4,9 @@
 import {
   ClonableConstructor, MongoRepositoryOptions, PreventedResult, PreventedResultError,
 } from '@mongobubble/core';
+import Ajv from 'ajv';
 import { ObjectId, EJSON } from 'bson';
-import { ServiceSchema, Context } from 'moleculer';
+import { ServiceSchema, Context, Errors } from 'moleculer';
 import { EntityWithLifecycle, LifecyclePluginOptions, MongoBubble } from 'mongobubble';
 import { MongoClient, Document } from 'mongodb';
 import { inspect } from 'util';
@@ -27,16 +28,21 @@ export type MongoBubbleMixin<
   mongobubbleMixinOptions: MongoBubbleMixinOptions;
 };
 
+export type EntityClassWithStatics<TEntity> = ClonableConstructor<TEntity> & Partial<{
+  COLLECTION: string,
+  parseId: (id: string) => ObjectId | number | string,
+}>;
+
 export default function createDbServiceMixin<
   TEntity extends EntityWithLifecycle<TEntity, Identity>,
   Identity = ObjectId,
 >(
-  entityClass: ClonableConstructor<TEntity>,
+  entityClass: EntityClassWithStatics<TEntity>,
   mixinOptions: MongoBubbleMixinOptions = {} as MongoBubbleMixinOptions,
   repositoryOptions = {} as Document & MongoRepositoryOptions & LifecyclePluginOptions,
 ): Partial<ServiceSchema> {
   const mixin: MongoBubbleMixin<TEntity, Identity> = {
-    name: (entityClass as unknown as Document).COLLECTION,
+    name: entityClass.COLLECTION,
 
     mongobubbleMixinOptions: mixinOptions,
 
@@ -106,29 +112,145 @@ export default function createDbServiceMixin<
       getGlobalClient(): MongoClient {
         return GLOBAL_CLIENT;
       },
+
+      async call(method: string, params: any, opts: any): Promise<any> {
+        const p = EJSON.serialize(params);
+        const result = await this.broker.call(method, p, opts);
+        return EJSON.deserialize(result);
+      },
+
+      unmergeParams(ctx: Context<Document>, {
+        paramsProps = [] as string[],
+        queryProps = [] as string[],
+        bodyProps = [] as string[],
+        mergeAdditionalProps = false,
+      } = {}) {
+        // This was necessary because moleculer-web has an issue that
+        // `mergeParams` cannot be defined per action when using auto-aliases
+        // https://github.com/moleculerjs/moleculer-web/issues/333
+
+        // Then, I were also forced to develop a new validation method
+        // that would work with the unmerged params and also coerce types
+
+        // Anyway, it was better to do this than to split internal/REST actions
+
+        // TODO: remove this when the issue is fixed?
+
+        // TODO: make another community module with those workarounds?
+
+        if (ctx.params.params || ctx.params.query || ctx.params.body) {
+          // already unmerged
+          return ctx.params;
+        }
+        const params = {} as { query?: { [k: string]: any }, body?: { [k: string]: any } };
+
+        if (!queryProps?.length && !bodyProps?.length && !mergeAdditionalProps) {
+          params.body = ctx.params;
+          return params;
+        }
+
+        if (queryProps.length) {
+          params.query = {};
+          queryProps.forEach((prop) => {
+            params.query[prop] = ctx.params[prop];
+          });
+        }
+        if (bodyProps.length) {
+          params.body = {};
+          bodyProps.forEach((prop) => {
+            params.body[prop] = ctx.params[prop];
+          });
+        }
+        if (mergeAdditionalProps) {
+          if (!params.body) {
+            params.body = {};
+          }
+          const additionalProps = Object.keys(ctx.params).filter((prop) => {
+            return !queryProps.includes(prop)
+              && !bodyProps.includes(prop)
+              && !paramsProps.includes(prop);
+          });
+          additionalProps.forEach((prop) => {
+            params.body[prop] = ctx.params[prop];
+          });
+        }
+        return params;
+      },
+
+      validateParams(params: any, schema: any) {
+        const ajv = new Ajv({
+          coerceTypes: true,
+          useDefaults: true,
+        });
+        const validate = ajv.compile(schema);
+        const valid = validate(params);
+        if (!valid) {
+          throw new Errors.ValidationError(`Invalid params: ${ajv.errorsText(validate.errors)}`);
+        }
+      },
+
+      unmergeAndValidate(ctx: Context<Document>, schema: any, excludeParams: string[] = []) {
+        const params = this.unmergeParams(ctx, {
+          queryProps: schema.properties.query
+            ? Object.keys(schema.properties.query?.properties || {})
+            : [],
+          paramsProps: excludeParams,
+          bodyProps: schema.properties.body
+            ? Object.keys(schema.properties.body?.properties || {})
+            : [],
+          mergeAdditionalProps: schema.properties.body
+            ? schema.properties.body.additionalProperties
+            : false,
+        });
+        this.validateParams(params, schema);
+        return params;
+      },
+
+      parseId(ctx: Context<Document>) {
+        let id = ctx.params.id || ctx.params?.params?.id;
+        if (!id) {
+          throw new Errors.ValidationError('Missing id in params');
+        }
+
+        id = decodeURIComponent(id);
+
+        if (entityClass.parseId) {
+          id = entityClass.parseId(id);
+        }
+
+        return id;
+      },
     },
 
     actions: {
 
       list: {
         rest: 'GET /',
-        mergeParams: true,
-        params: {
-          drafts: { type: 'boolean', optional: true },
-          archived: { type: 'boolean', optional: true },
-        },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository();
 
+          const params = ctx.service?.unmergeAndValidate(ctx, {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'object',
+                properties: {
+                  drafts: { type: 'boolean' },
+                  archived: { type: 'boolean' },
+                },
+              },
+            },
+          });
+
           let results: TEntity[];
 
-          if (ctx.params.query?.drafts) {
+          if (params.query?.drafts) {
             const errorOrResults = await repository.listDrafts();
             if (errorOrResults instanceof PreventedResult) {
               throw new PreventedResultError(errorOrResults);
             }
             results = errorOrResults;
-          } else if (ctx.params?.archived) {
+          } else if (params.query?.archived) {
             const errorOrResults = await repository.listArchive();
             if (errorOrResults instanceof PreventedResult) {
               throw new PreventedResultError(errorOrResults);
@@ -144,10 +266,10 @@ export default function createDbServiceMixin<
 
       getById: {
         rest: 'GET /:id',
-        mergeParams: true,
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository();
-          const result = await repository.get(ctx.params.id);
+          const id = ctx.service?.parseId(ctx);
+          const result = await repository.get(id);
 
           if (!result) {
             // eslint-ignore-next-line
@@ -160,15 +282,25 @@ export default function createDbServiceMixin<
 
       insertOne: {
         rest: 'POST /',
-        mergeParams: true,
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
 
-          const result = await repository.insertOne(EJSON.deserialize(ctx.params));
+          const params = ctx.service?.unmergeAndValidate(ctx, {
+            type: 'object',
+            // TODO: get schema from entity class
+            properties: {
+              body: {
+                type: 'object',
+                additionalProperties: true,
+              },
+            },
+          });
+
+          const result = await repository.insertOne(EJSON.deserialize(params.body));
           const serialized = EJSON.serialize(result);
 
 
-          ctx.broker.emit(`${ctx.service?.name}.created`, serialized);
+          ctx.broker.emit(`${ctx.service?.fullName}.created`, serialized);
 
           return serialized;
         },
@@ -176,15 +308,21 @@ export default function createDbServiceMixin<
 
       patchOneByIdRest: {
         rest: 'PATCH /:id',
-        mergeParams: false,
-        params: {
-          body: { type: 'object' },
-        },
         handler: async (ctx: Context<Document>) => {
-          (() => { })();
-          return ctx.call(`${ctx.service?.name}.patchOneById`, {
-            id: ctx.params.params.id,
-            patch: ctx.params.body,
+          const id = ctx.service?.parseId(ctx);
+          const params = ctx.service?.unmergeAndValidate(ctx, {
+            type: 'object',
+            properties: {
+              body: {
+                type: 'object',
+                additionalProperties: true,
+              },
+            },
+          }, ['id']);
+
+          return ctx.call(`${ctx.service?.fullName}.patchOneById`, {
+            id: id,
+            patch: params.body,
           });
         },
       },
@@ -192,7 +330,6 @@ export default function createDbServiceMixin<
       patchOneById: {
         visibility: 'public',
         params: {
-          id: { type: 'string' },
           patch: { type: 'object' },
         },
         handler: async (ctx: Context<Document>) => {
@@ -204,7 +341,7 @@ export default function createDbServiceMixin<
 
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.name}.updated`, serialized);
+          ctx.broker.emit(`${ctx.service?.fullName}.updated`, serialized);
 
           return serialized;
         },
@@ -212,21 +349,31 @@ export default function createDbServiceMixin<
 
       patchOneRest: {
         rest: 'PATCH /',
-        mergeParams: false,
-        params: {
-          // this validation is breaking moleculer
-          // query: {
-          //   filter: { type: 'object' },
-          //   upsert: { type: 'boolean', optional: true },
-          // },
-          body: { type: 'object' },
-        },
         handler: async (ctx: Context<Document>) => {
-          (() => { })();
-          return ctx.call(`${ctx.service?.name}.patchOne`, {
-            filter: ctx.params.params.filter,
-            upsert: ctx.params.params.upsert,
-            patch: ctx.params.body,
+          const params = ctx.service?.unmergeAndValidate(ctx, {
+            type: 'object',
+            properties: {
+              body: {
+                type: 'object',
+                additionalProperties: true,
+              },
+              query: {
+                type: 'object',
+                properties: {
+                  filter: { type: 'string' },
+                  // upsert: { type: 'boolean' },
+                },
+                required: ['filter'],
+              },
+            },
+          }, ['id']);
+
+          params.query.filter = EJSON.parse(params.query.filter);
+
+          return ctx.call(`${ctx.service?.fullName}.patchOne`, {
+            filter: params.query.filter,
+            upsert: params.query.upsert,
+            patch: params.body,
           });
         },
       },
@@ -235,7 +382,7 @@ export default function createDbServiceMixin<
         visibility: 'public',
         params: {
           filter: { type: 'object' },
-          upsert: { type: 'boolean', optional: true },
+          // upsert: { type: 'boolean', optional: true },
           patch: { type: 'object' },
         },
         handler: async (ctx: Context<Document>) => {
@@ -251,7 +398,7 @@ export default function createDbServiceMixin<
 
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.name}.updated`, serialized);
+          ctx.broker.emit(`${ctx.service?.fullName}.updated`, serialized);
 
           return serialized;
         },
@@ -259,27 +406,29 @@ export default function createDbServiceMixin<
 
       replaceOneRest: {
         rest: 'PUT /:id',
-        mergeParams: false,
-        params: {
-          body: { type: 'object' },
-        },
         handler: async (ctx: Context<Document>) => {
-          (() => { })();
-          return ctx.call(`${ctx.service?.name}.replaceOne`, ctx.params.body);
+          ctx.service?.parseId(ctx);
+          const params = ctx.service?.unmergeAndValidate(ctx, {
+            type: 'object',
+            properties: {
+              body: {
+                type: 'object',
+                additionalProperties: true,
+              },
+            },
+          }, ['id']);
+          return ctx.call(`${ctx.service?.fullName}.replaceOne`, params.body);
         },
       },
 
       replaceOne: {
         visibility: 'public',
-        params: {
-          document: { type: 'object' },
-        },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
-          const result = await repository.replaceOne(EJSON.deserialize(ctx.params.document));
+          const result = await repository.replaceOne(EJSON.deserialize(ctx.params));
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.name}.updated`, serialized);
+          ctx.broker.emit(`${ctx.service?.fullName}.updated`, serialized);
 
           return serialized;
         },
@@ -287,16 +436,13 @@ export default function createDbServiceMixin<
 
       deleteOne: {
         rest: 'DELETE /:id',
-        mergeParams: true,
-        params: {
-          id: { type: 'string' },
-        },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
-          const result = await repository.deleteOne(ctx.params.id);
+          const id = ctx.service?.parseId(ctx);
+          const result = await repository.deleteOneById(id);
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.name}.deleted`, serialized);
+          ctx.broker.emit(`${ctx.service?.fullName}.deleted`, serialized);
 
           return serialized;
         },
@@ -304,18 +450,16 @@ export default function createDbServiceMixin<
 
       publish: {
         rest: 'PUT /:id/publish',
-        mergeParams: true,
-        params: {
-          id: { type: 'string' },
-        },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository();
-          const entity = await repository.get(ctx.params.id);
-          const patch = entity.publish();
-          const result = await repository.patchOne({ _id: entity._id }, patch);
+          const id = ctx.service?.parseId(ctx);
+
+          console.log("id", id);
+
+          const result = await repository.publishById(id)
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.name}.published`, serialized);
+          ctx.broker.emit(`${ctx.service?.fullName}.published`, serialized);
 
           return serialized;
         },
@@ -323,18 +467,29 @@ export default function createDbServiceMixin<
 
       archive: {
         rest: 'PUT /:id/archive',
-        mergeParams: true,
-        params: {
-          id: { type: 'string' },
-        },
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository();
-          const entity = await repository.get(ctx.params.id);
-          const patch = entity.archive();
-          const result = await repository.patchOne({ _id: entity._id }, patch);
+          const id = ctx.service?.parseId(ctx);
+
+          const result = await repository.archiveById(id)
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.name}.archived`, serialized);
+          ctx.broker.emit(`${ctx.service?.fullName}.archived`, serialized);
+
+          return serialized;
+        },
+      },
+
+      unpublish: {
+        rest: 'PUT /:id/unpublish',
+        handler: async (ctx: Context<Document>) => {
+          const repository = ctx.service?.getRepository();
+          const id = ctx.service?.parseId(ctx);
+
+          const result = await repository.unpublishById(id)
+          const serialized = EJSON.serialize(result);
+
+          ctx.broker.emit(`${ctx.service?.fullName}.unpublished`, serialized);
 
           return serialized;
         },

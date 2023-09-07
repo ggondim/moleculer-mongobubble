@@ -35,11 +35,12 @@ This code will automatically generate the following service actions:
 | getById | `id: string` | - |
 | insertOne | `object` | `users.created` |
 | patchOneById | `id: string`<br>`patch: object` | `users.updated` |
-| patchOne | `filter: object`<br>`patch: object`<br>`upsert?: boolean` | `users.updated` |
+| patchOne | `filter: object`<br>`patch: object` | `users.updated` |
 | replaceOne | `object` | `users.updated` |
 | deleteOne | `id: string` | `users.deleted` |
 | archive | `id: string` | `users.archived` |
 | publish | `id: string` | `users.published` |
+| unpublish | `id: string` | `users.unpublished` |
 
 ### Calling from API gateway (moleculer-web)
 
@@ -49,11 +50,12 @@ This code will automatically generate the following service actions:
 | GET | `/api/v1/users/:id` | - | - |
 | POST | `/api/v1/users` | - | `object` |
 | PATCH | `/api/v1/users/:id` | - | `object` |
-| PATCH | `/api/v1/users` | `?filter=object`<br>`&upsert=true` (optional) | `object` |
+| PATCH | `/api/v1/users` | `?filter=object` (optional) | `object` |
 | PUT | `/api/v1/users/:id` | - | `object` |
 | DELETE | `/api/v1/users/:id` | - | - |
 | PUT | `/api/v1/users/:id/archive` | - | - |
 | PUT | `/api/v1/users/:id/publish` | - | - |
+| PUT | `/api/v1/users/:id/unpublish` | - | - |
 
 ## Database connections
 
@@ -92,9 +94,32 @@ You can access the local repository using the internal method `getRepository()` 
 
 The third parameter of the mixin is the [option object](https://mongobubble.com/docs/repository/constructor/#options-argument) that will be passed to the MongoBubble repository constructor. You should use it to configure the repository and to pass plugins options.
 
+## ID params in URLs
+
+The `id` param is a string by default inside moleculer-web.
+
+You should always use encoded strings in URLs, specially when IDs could have special characters.
+
+Moleculer-MongoBubble will try to automatically convert IDs to the correct identity type using MongoBubble's `parseId` static method.
+
+In this case, default primitives accepted by `parseId` are `ObjectId`, `number` and `string`, in this order. If you need to use more complex types, you can override the `parseId` method in your entity class.
+
+Example with an `UUID` type:
+
+```typescript
+import { EntityWithLifecycle } from "mongobubble";
+import UUID from "uuid";
+
+class User extends EntityWithLifecycle {
+  static parseId(id: string) {
+    return UUID.parse(id);
+  }
+}
+```
+
 ## EJSON
 
-This mixin always returns documents serialized in [EJSON](https://docs.mongodb.com/manual/reference/mongodb-extended-json/).
+The MongoBubbleService mixin always returns documents serialized in [EJSON](https://docs.mongodb.com/manual/reference/mongodb-extended-json/) to avoid losing data types.
 
 This means an `ObjectId` will be serialized as `{ "$oid": "..." }` and a `Date` will be serialized as `{ "$date": "..." }`, for example.
 
@@ -122,9 +147,39 @@ const user = {
 await broker.call("users.insertOne", EJSON.serialize(user));
 ```
 
-~~To automatically serialize/deserialize EJSON objects, you can use the broker middleware:~~
+To automatically serialize/deserialize EJSON objects, you can use the EJSON service mixin in services that would call other services built with MongoBubbleService mixin.
 
->⚠️ The broker middleware that wraps the broker `call` method to automatically serialize/deserialize EJSON objects is not working due to an [issue with moleculer](https://github.com/moleculerjs/moleculer/issues/1241). Please use the `EJSON.serialize` and `EJSON.deserialize` methods until this issue is fixed.
+This mixin will add a service-level method `call` that wraps the broker `call` method to automatically serialize/deserialize EJSON objects.
+
+```typescript
+import { Context, ServiceSchema } from "moleculer";
+import { inspect } from "util";
+import { EjsonServiceMixin } from "moleculer-mongobubble";
+
+const CustomService: Partial<ServiceSchema> = {
+  version: 1,
+  name: "custom-service",
+
+  mixins: [EjsonServiceMixin],
+
+  actions: {
+    callUsersList: {
+      async handler(ctx: Context<{ param1: string }>) {
+
+        // params are serialized to EJSON
+        const result = await this.call("v1.users.list", { drafts: true });
+
+        // results are BSON native objects
+        console.log("log", inspect(result));
+      },
+    },
+  },
+}
+
+export default CustomService;
+```
+
+>⚠️ This would be the best solution when working with automatic EJSON serialization, until [this moleculer issue](https://github.com/moleculerjs/moleculer/issues/1241) is solved.
 
 <!-- ```typescript
 // moleculer.config.js
@@ -145,6 +200,7 @@ await broker.call("users.insertOne", user); // user will be automatically serial
 ``` -->
 
 ## Roadmap
+- [ ] Authoring and auditing metadata
 - [ ] Implement the remaining MongoBubble's methods
 - [ ] Replace connection utility by MongoBubble's connection managers
 - [ ] Implement other Moleculer features, like caching

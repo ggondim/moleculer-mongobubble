@@ -1,6 +1,6 @@
 {
   "name": "moleculer-mongobubble",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "description": "A Moleculer module for generating CRUD APIs using MongoBubble.",
   "readme": "README.md",
   "main": "dist/index.js",
@@ -62,10 +62,11 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
-    "@mongobubble/core": "^1.1.1",
+    "@mongobubble/core": "^1.2.1",
+    "ajv": "^8.12.0",
     "bson": "^5.4.0",
     "moleculer": "^0.14.31",
-    "mongobubble": "^1.0.4",
+    "mongobubble": "^1.1.2",
     "mongodb": "^5.8.1"
   }
 }
