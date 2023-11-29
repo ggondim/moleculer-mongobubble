@@ -179,6 +179,9 @@ const CustomService: Partial<ServiceSchema> = {
 export default CustomService;
 ```
 
+Plus, the mixin also will add a `before` hook to automatically deserialize EJSON objects in incoming requests.
+
+
 >⚠️ This would be the best solution when working with automatic EJSON serialization, until [this moleculer issue](https://github.com/moleculerjs/moleculer/issues/1241) is solved.
 
 <!-- ```typescript

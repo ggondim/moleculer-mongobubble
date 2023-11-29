@@ -1,6 +1,6 @@
 {
   "name": "moleculer-mongobubble",
-  "version": "1.1.0",
+  "version": "1.3.1",
   "description": "A Moleculer module for generating CRUD APIs using MongoBubble.",
   "readme": "README.md",
   "main": "dist/index.js",
@@ -46,11 +46,11 @@
     "@commitlint/cli": "^17.7.1",
     "@commitlint/config-conventional": "^17.7.0",
     "@jest/globals": "^29.6.4",
-    "@types/node": "^20.5.6",
-    "@typescript-eslint/eslint-plugin": "^6.4.1",
-    "@typescript-eslint/parser": "^6.4.1",
+    "@types/node": "^20.5.9",
+    "@typescript-eslint/eslint-plugin": "^6.6.0",
+    "@typescript-eslint/parser": "^6.6.0",
     "ctix": "^0.6.0",
-    "eslint": "^8.47.0",
+    "eslint": "^8.48.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-config-airbnb-typescript": "^17.1.0",
     "eslint-plugin-eslint-comments": "^3.2.0",
@@ -62,11 +62,11 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
-    "@mongobubble/core": "^1.2.1",
+    "@mongobubble/core": "2.0.2",
     "ajv": "^8.12.0",
-    "bson": "^5.4.0",
+    "bson": "^6.0.0",
     "moleculer": "^0.14.31",
-    "mongobubble": "^1.1.2",
-    "mongodb": "^5.8.1"
+    "mongobubble": "2.0.2",
+    "mongodb": "^6.0.0"
   }
 }

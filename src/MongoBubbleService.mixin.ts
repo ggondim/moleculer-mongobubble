@@ -9,7 +9,6 @@ import { ObjectId, EJSON } from 'bson';
 import { ServiceSchema, Context, Errors } from 'moleculer';
 import { EntityWithLifecycle, LifecyclePluginOptions, MongoBubble } from 'mongobubble';
 import { MongoClient, Document } from 'mongodb';
-import { inspect } from 'util';
 
 let GLOBAL_CLIENT: MongoClient;
 
@@ -39,7 +38,7 @@ export default function createDbServiceMixin<
 >(
   entityClass: EntityClassWithStatics<TEntity>,
   mixinOptions: MongoBubbleMixinOptions = {} as MongoBubbleMixinOptions,
-  repositoryOptions = {} as Document & MongoRepositoryOptions & LifecyclePluginOptions,
+  repositoryOptions = {} as Document & MongoRepositoryOptions<TEntity> & LifecyclePluginOptions,
 ): Partial<ServiceSchema> {
   const mixin: MongoBubbleMixin<TEntity, Identity> = {
     name: entityClass.COLLECTION,
@@ -66,27 +65,27 @@ export default function createDbServiceMixin<
     },
 
     stopped(this) {
-      try {
-        if (this.repository) {
-          this.repository.dispose();
-        }
-        if (GLOBAL_CLIENT && GLOBAL_CLIENT.close) {
-          GLOBAL_CLIENT.close();
-        }
-      } catch (e) {
-        // this.logger.warn("Unable to stop database connection gracefully.", e);
-      }
+      // try {
+      //   if (this.repository) {
+      //     this.repository.dispose();
+      //   }
+      //   if (GLOBAL_CLIENT && GLOBAL_CLIENT.close) {
+      //     GLOBAL_CLIENT.close();
+      //   }
+      // } catch (e) {
+      //   // this.logger.warn("Unable to stop database connection gracefully.", e);
+      // }
     },
 
     methods: {
       async newReusableRepository() {
         return new MongoBubble<TEntity, Identity>(
-          entityClass,
           {
             ...repositoryOptions,
             client: GLOBAL_CLIENT,
             db: mixinOptions.dbName,
             autoConnectionSwitch: false,
+            EntityClass: entityClass,
           },
         );
       },
@@ -101,7 +100,6 @@ export default function createDbServiceMixin<
         }
 
         return new MongoBubble<TEntity, Identity>(
-          entityClass,
           {
             ...repositoryOptions,
             autoConnectionSwitch: true,
@@ -131,8 +129,6 @@ export default function createDbServiceMixin<
 
         // Then, I were also forced to develop a new validation method
         // that would work with the unmerged params and also coerce types
-
-        // Anyway, it was better to do this than to split internal/REST actions
 
         // TODO: remove this when the issue is fixed?
 
@@ -237,6 +233,8 @@ export default function createDbServiceMixin<
                 properties: {
                   drafts: { type: 'boolean' },
                   archived: { type: 'boolean' },
+                  page: { type: 'number' },
+                  limit: { type: 'number' },
                 },
               },
             },
@@ -244,21 +242,58 @@ export default function createDbServiceMixin<
 
           let results: TEntity[];
 
+          const statuses = ["PUBLISHED"];
+
           if (params.query?.drafts) {
-            const errorOrResults = await repository.listDrafts();
-            if (errorOrResults instanceof PreventedResult) {
-              throw new PreventedResultError(errorOrResults);
-            }
-            results = errorOrResults;
-          } else if (params.query?.archived) {
-            const errorOrResults = await repository.listArchive();
-            if (errorOrResults instanceof PreventedResult) {
-              throw new PreventedResultError(errorOrResults);
-            }
-            results = errorOrResults;
-          } else {
-            results = await repository.list();
+            statuses.push("DRAFT");
           }
+          if (params.query?.archived) {
+            statuses.push("ARCHIVED");
+          }
+
+          const pipeline = [{
+            $match: { '_meta.status': { $in: statuses } },
+          }] as any[];
+
+          if (params.query?.page || params.query?.limit) {
+            const page = params.query?.page || 1;
+            const limit = params.query?.limit || 100;
+            const skip = (page - 1) * limit;
+            pipeline.push({ $skip: skip }, { $limit: limit });
+          }
+
+          results = await repository.list(pipeline);
+          return EJSON.serialize(results);
+        },
+      },
+
+      listDrafts: {
+        rest: 'GET /drafts',
+        handler: async (ctx: Context<Document>) => {
+          const repository = ctx.service?.getRepository();
+          let results: TEntity[];
+
+          const errorOrResults = await repository.listDrafts();
+          if (errorOrResults instanceof PreventedResult) {
+            throw new PreventedResultError(errorOrResults);
+          }
+          results = errorOrResults;
+
+          return EJSON.serialize(results);
+        },
+      },
+
+      listArchive: {
+        rest: 'GET /archive',
+        handler: async (ctx: Context<Document>) => {
+          const repository = ctx.service?.getRepository();
+          let results: TEntity[];
+
+          const errorOrResults = await repository.listArchive();
+          if (errorOrResults instanceof PreventedResult) {
+            throw new PreventedResultError(errorOrResults);
+          }
+          results = errorOrResults;
 
           return EJSON.serialize(results);
         },
@@ -274,7 +309,7 @@ export default function createDbServiceMixin<
           if (!result) {
             // eslint-ignore-next-line
             ctx.meta["$statusCode"] = 404;
-            return {};
+            return null;
           }
           return EJSON.serialize(result);
         },
@@ -293,12 +328,21 @@ export default function createDbServiceMixin<
                 type: 'object',
                 additionalProperties: true,
               },
+              query: {
+                type: 'object',
+                properties: {
+                  stopPropagation: { type: 'boolean' },
+                },
+              },
             },
           });
 
           const result = await repository.insertOne(EJSON.deserialize(params.body));
           const serialized = EJSON.serialize(result);
 
+          if (params.query.stopPropagation) {
+            return serialized;
+          }
 
           ctx.broker.emit(`${ctx.service?.fullName}.created`, serialized);
 
@@ -317,12 +361,19 @@ export default function createDbServiceMixin<
                 type: 'object',
                 additionalProperties: true,
               },
+              query: {
+                type: 'object',
+                properties: {
+                  stopPropagation: { type: 'boolean' },
+                },
+              },
             },
           }, ['id']);
 
           return ctx.call(`${ctx.service?.fullName}.patchOneById`, {
             id: id,
             patch: params.body,
+            stopPropagation: params.query.stopPropagation,
           });
         },
       },
@@ -335,13 +386,24 @@ export default function createDbServiceMixin<
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
 
+          const options = { snapshot: {} };
+
           const result = await repository.patchOne({
             _id: ctx.params.id,
-          }, EJSON.deserialize(ctx.params.patch));
+          }, EJSON.deserialize(ctx.params.patch), options);
 
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.fullName}.updated`, serialized);
+          if (ctx.params.stopPropagation) {
+            return serialized;
+          }
+
+          ctx.broker.emit(`${ctx.service?.fullName}.updated`, {
+            id: ctx.params.id,
+            result: serialized,
+            old: options.snapshot,
+            patch: ctx.params.patch,
+          });
 
           return serialized;
         },
@@ -362,6 +424,7 @@ export default function createDbServiceMixin<
                 properties: {
                   filter: { type: 'string' },
                   // upsert: { type: 'boolean' },
+                  stopPropagation: { type: 'boolean' },
                 },
                 required: ['filter'],
               },
@@ -374,6 +437,7 @@ export default function createDbServiceMixin<
             filter: params.query.filter,
             upsert: params.query.upsert,
             patch: params.body,
+            stopPropagation: params.query.stopPropagation,
           });
         },
       },
@@ -388,7 +452,8 @@ export default function createDbServiceMixin<
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
 
-          const options = ctx.params.upsert ? { upsert: true } : {};
+          const snapshot = {};
+          const options = ctx.params.upsert ? { upsert: true, snapshot } : { snapshot };
 
           const result = await repository.patchOne(
             EJSON.deserialize(ctx.params.filter),
@@ -398,16 +463,24 @@ export default function createDbServiceMixin<
 
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.fullName}.updated`, serialized);
+          if (ctx.params.stopPropagation) {
+            return serialized;
+          }
+
+          ctx.broker.emit(`${ctx.service?.fullName}.updated`, {
+            id: ctx.params.id,
+            result: serialized,
+            old: options.snapshot,
+            patch: ctx.params.patch,
+          });
 
           return serialized;
         },
       },
 
       replaceOneRest: {
-        rest: 'PUT /:id',
+        rest: 'PUT /',
         handler: async (ctx: Context<Document>) => {
-          ctx.service?.parseId(ctx);
           const params = ctx.service?.unmergeAndValidate(ctx, {
             type: 'object',
             properties: {
@@ -415,9 +488,20 @@ export default function createDbServiceMixin<
                 type: 'object',
                 additionalProperties: true,
               },
+              query: {
+                type: 'object',
+                properties: {
+                  upsert: { type: 'boolean' },
+                  stopPropagation: { type: 'boolean' },
+                },
+              },
             },
-          }, ['id']);
-          return ctx.call(`${ctx.service?.fullName}.replaceOne`, params.body);
+          });
+          return ctx.call(`${ctx.service?.fullName}.replaceOne`, {
+            document: params.body,
+            upsert: params.query.upsert,
+            stopPropagation: params.query.stopPropagation,
+          });
         },
       },
 
@@ -425,10 +509,27 @@ export default function createDbServiceMixin<
         visibility: 'public',
         handler: async (ctx: Context<Document>) => {
           const repository = ctx.service?.getRepository() as MongoBubble<TEntity, Identity>;
-          const result = await repository.replaceOne(EJSON.deserialize(ctx.params));
+
+          const options = { snapshot: {} };
+          if (ctx.params.upsert) {
+            options['upsert'] = true;
+          }
+
+          const document = EJSON.deserialize(ctx.params.document);
+          const result = await repository.replaceOne(document, options);
           const serialized = EJSON.serialize(result);
 
-          ctx.broker.emit(`${ctx.service?.fullName}.updated`, serialized);
+          if (ctx.params.stopPropagation) {
+            return serialized;
+          }
+
+          ctx.broker.emit(`${ctx.service?.fullName}.updated`, {
+            id: ctx.params.id,
+            result: serialized,
+            old: options.snapshot,
+            document,
+            upsert: ctx.params.upsert,
+          });
 
           return serialized;
         },
@@ -441,6 +542,10 @@ export default function createDbServiceMixin<
           const id = ctx.service?.parseId(ctx);
           const result = await repository.deleteOneById(id);
           const serialized = EJSON.serialize(result);
+
+          if (ctx.params.stopPropagation) {
+            return serialized;
+          }
 
           ctx.broker.emit(`${ctx.service?.fullName}.deleted`, serialized);
 
@@ -459,6 +564,10 @@ export default function createDbServiceMixin<
           const result = await repository.publishById(id)
           const serialized = EJSON.serialize(result);
 
+          if (ctx.params.stopPropagation) {
+            return serialized;
+          }
+
           ctx.broker.emit(`${ctx.service?.fullName}.published`, serialized);
 
           return serialized;
@@ -474,6 +583,10 @@ export default function createDbServiceMixin<
           const result = await repository.archiveById(id)
           const serialized = EJSON.serialize(result);
 
+          if (ctx.params.stopPropagation) {
+            return serialized;
+          }
+
           ctx.broker.emit(`${ctx.service?.fullName}.archived`, serialized);
 
           return serialized;
@@ -488,6 +601,10 @@ export default function createDbServiceMixin<
 
           const result = await repository.unpublishById(id)
           const serialized = EJSON.serialize(result);
+
+          if (ctx.params.stopPropagation) {
+            return serialized;
+          }
 
           ctx.broker.emit(`${ctx.service?.fullName}.unpublished`, serialized);
 
