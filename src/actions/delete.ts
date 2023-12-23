@@ -1,10 +1,11 @@
 import { Document, EJSON } from 'bson';
 import { Context } from 'moleculer';
 import { parseIdFromParams } from '../utils/params';
+import { MongoBubbleMetadata } from '../utils/types';
 
 export const deleteOne = {
   rest: 'DELETE /:id',
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const repository = await (async () => ctx.service?.getRepository())();
     const id = parseIdFromParams(ctx);
     const result = await repository.deleteOneById(id);
@@ -14,7 +15,8 @@ export const deleteOne = {
       return serialized;
     }
 
-    ctx.broker.emit(`${ctx.service?.fullName}.deleted`, serialized);
+    const prefix = ctx.meta?.eventPrefix || '';
+    ctx.broker.emit(`${prefix}${ctx.service?.fullName}.deleted`, serialized);
 
     return serialized;
   },

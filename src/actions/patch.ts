@@ -2,10 +2,11 @@ import { Document, EJSON } from 'bson';
 import { ActionVisibility, Context } from 'moleculer';
 import { unmergeAndValidate } from '../utils/params';
 import { isEJSON } from '../utils/ejson';
+import { MongoBubbleMetadata } from '../utils/types';
 
 export const patchOneByIdRest = {
   rest: 'PATCH /:id',
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const id = ctx.service?.parseId(ctx);
     const params = unmergeAndValidate(ctx, {
       type: 'object',
@@ -29,6 +30,10 @@ export const patchOneByIdRest = {
       id,
       patch: bsonBody,
       stopPropagation: params?.query?.stopPropagation,
+    }, {
+      meta: {
+        eventPrefix: ctx.meta?.eventPrefix,
+      },
     });
   },
 };
@@ -38,7 +43,7 @@ export const patchOneById = {
   params: {
     patch: { type: 'object' },
   },
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const repository = await (async () => ctx.service?.getRepository())();
 
     const options = { snapshot: {} };
@@ -58,7 +63,8 @@ export const patchOneById = {
       return serialized;
     }
 
-    ctx.broker.emit(`${ctx.service?.fullName}.updated`, {
+    const prefix = ctx.meta?.eventPrefix || '';
+    ctx.broker.emit(`${prefix}${ctx.service?.fullName}.updated`, {
       id: ctx.params.id,
       result: serialized,
       old: options.snapshot,
@@ -71,7 +77,7 @@ export const patchOneById = {
 
 export const patchOneRest = {
   rest: 'PATCH /',
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const params = ctx.service?.unmergeAndValidate(ctx, {
       type: 'object',
       properties: {
@@ -99,6 +105,10 @@ export const patchOneRest = {
       upsert: params.query.upsert,
       patch: params.body,
       stopPropagation: params?.query?.stopPropagation,
+    }, {
+      meta: {
+        eventPrefix: ctx.meta?.eventPrefix,
+      },
     });
   },
 };
@@ -110,7 +120,7 @@ export const patchOne = {
     // upsert: { type: 'boolean', optional: true },
     patch: { type: 'object' },
   },
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const repository = await (async () => ctx.service?.getRepository())();
 
     const snapshot = {};
@@ -135,7 +145,8 @@ export const patchOne = {
       return serialized;
     }
 
-    ctx.broker.emit(`${ctx.service?.fullName}.updated`, {
+    const prefix = ctx.meta?.eventPrefix || '';
+    ctx.broker.emit(`${prefix}${ctx.service?.fullName}.updated`, {
       id: ctx.params.id,
       result: serialized,
       old: options.snapshot,

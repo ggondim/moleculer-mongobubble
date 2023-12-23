@@ -2,10 +2,11 @@ import { Document, EJSON } from 'bson';
 import { Context } from 'moleculer';
 import { unmergeAndValidate } from '../utils/params';
 import { isEJSON } from '../utils/ejson';
+import { MongoBubbleMetadata } from '../utils/types';
 
 export const insertOne = {
   rest: 'POST /',
-  handler: async (ctx: Context<Document, { eventPrefix: string }>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const repository = ctx.service?.getRepository('write');
 
     const params = unmergeAndValidate(ctx, {

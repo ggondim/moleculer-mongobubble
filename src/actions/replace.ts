@@ -2,10 +2,11 @@ import { Document, EJSON } from 'bson';
 import { ActionVisibility, Context } from 'moleculer';
 import { unmergeAndValidate } from '../utils/params';
 import { isEJSON } from '../utils/ejson';
+import { MongoBubbleMetadata } from '../utils/types';
 
 export const replaceOneRest = {
   rest: 'PUT /',
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const params = unmergeAndValidate(ctx, {
       type: 'object',
       properties: {
@@ -22,7 +23,9 @@ export const replaceOneRest = {
         },
       },
     });
-    return ctx.call(`${ctx.service?.fullName}.replaceOne`, {
+
+    const prefix = ctx.meta?.eventPrefix || '';
+    return ctx.call(`${prefix}${ctx.service?.fullName}.replaceOne`, {
       document: params.body,
       upsert: params.query.upsert,
       stopPropagation: params?.query?.stopPropagation,
@@ -32,7 +35,7 @@ export const replaceOneRest = {
 
 export const replaceOne = {
   visibility: 'public' as ActionVisibility,
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const repository = await (async () => ctx.service?.getRepository())();
 
     const options = { snapshot: {}, upsert: null };
@@ -53,7 +56,8 @@ export const replaceOne = {
       return serialized;
     }
 
-    ctx.broker.emit(`${ctx.service?.fullName}.updated`, {
+    const prefix = ctx.meta?.eventPrefix || '';
+    ctx.broker.emit(`${prefix}${ctx.service?.fullName}.updated`, {
       id: ctx.params.id,
       result: serialized,
       old: options.snapshot,

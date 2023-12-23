@@ -1,10 +1,11 @@
 import { Document, EJSON } from 'bson';
 import { Context } from 'moleculer';
 import { parseIdFromParams } from '../utils/params';
+import { MongoBubbleMetadata } from '../utils/types';
 
 export const publish = {
   rest: 'PUT /:id/publish',
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const repository = await (async () => ctx.service?.getRepository())();
     const id = parseIdFromParams(ctx);
 
@@ -15,7 +16,8 @@ export const publish = {
       return serialized;
     }
 
-    ctx.broker.emit(`${ctx.service?.fullName}.published`, serialized);
+    const prefix = ctx.meta?.eventPrefix || '';
+    ctx.broker.emit(`${prefix}${ctx.service?.fullName}.published`, serialized);
 
     return serialized;
   },
@@ -23,7 +25,7 @@ export const publish = {
 
 export const archive = {
   rest: 'PUT /:id/archive',
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const repository = await (async () => ctx.service?.getRepository())();
     const id = parseIdFromParams(ctx);
 
@@ -34,7 +36,8 @@ export const archive = {
       return serialized;
     }
 
-    ctx.broker.emit(`${ctx.service?.fullName}.archived`, serialized);
+    const prefix = ctx.meta?.eventPrefix || '';
+    ctx.broker.emit(`${prefix}${ctx.service?.fullName}.archived`, serialized);
 
     return serialized;
   },
@@ -42,7 +45,7 @@ export const archive = {
 
 export const unpublish = {
   rest: 'PUT /:id/unpublish',
-  handler: async (ctx: Context<Document>) => {
+  handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
     const repository = await (async () => ctx.service?.getRepository())();
     const id = parseIdFromParams(ctx);
 
@@ -53,7 +56,8 @@ export const unpublish = {
       return serialized;
     }
 
-    ctx.broker.emit(`${ctx.service?.fullName}.unpublished`, serialized);
+    const prefix = ctx.meta?.eventPrefix || '';
+    ctx.broker.emit(`${prefix}${ctx.service?.fullName}.unpublished`, serialized);
 
     return serialized;
   },
