@@ -24,8 +24,7 @@ export const replaceOneRest = {
       },
     });
 
-    const prefix = ctx.meta?.eventPrefix || '';
-    return ctx.call(`${prefix}${ctx.service?.fullName}.replaceOne`, {
+    return ctx.call(`${ctx.service?.fullName}.replaceOne`, {
       document: params.body,
       upsert: params.query.upsert,
       stopPropagation: params?.query?.stopPropagation,
@@ -36,7 +35,7 @@ export const replaceOneRest = {
 export const replaceOne = {
   visibility: 'public' as ActionVisibility,
   handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('write'))();
 
     const options = { snapshot: {}, upsert: null };
     if (ctx.params?.upsert) {

@@ -44,7 +44,7 @@ export const patchOneById = {
     patch: { type: 'object' },
   },
   handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('write'))();
 
     const options = { snapshot: {} };
 
@@ -121,7 +121,7 @@ export const patchOne = {
     patch: { type: 'object' },
   },
   handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('write'))();
 
     const snapshot = {};
     const options = ctx.params.upsert ? { upsert: true, snapshot } : { snapshot };

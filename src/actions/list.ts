@@ -6,7 +6,7 @@ import { unmergeAndValidate } from '../utils/params';
 export const list = {
   rest: 'GET /',
   handler: async (ctx: Context<Document>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('read'))();
 
     const params = unmergeAndValidate(ctx, {
       type: 'object',
@@ -51,7 +51,7 @@ export const list = {
 export const listDrafts = {
   rest: 'GET /drafts',
   handler: async (ctx: Context<Document>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('read'))();
 
     const errorOrResults = await repository.listDrafts();
     if (errorOrResults instanceof PreventedResult) {
@@ -66,7 +66,7 @@ export const listDrafts = {
 export const listArchive = {
   rest: 'GET /archive',
   handler: async (ctx: Context<Document>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('read'))();
 
     const errorOrResults = await repository.listArchive();
     if (errorOrResults instanceof PreventedResult) {

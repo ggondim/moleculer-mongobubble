@@ -1,8 +1,7 @@
 import Ajv from 'ajv';
-import { Document, EJSON } from 'bson';
+import { Document, EJSON, ObjectId } from 'bson';
 import { Context, Errors } from 'moleculer';
 import { isEJSON } from './ejson';
-import { inspect } from 'util';
 
 export function unmergeParams(ctx: Context<Document>, {
   paramsProps = [] as string[],
@@ -105,6 +104,11 @@ export function parseIdFromParams(ctx: Context<Document>) {
     id = id._id;
   } else {
     id = decodeURIComponent(id);
+  }
+
+  const isObjectId = /^[a-f\d]{24}$/i.test(id) && ObjectId.isValid(id);
+  if (isObjectId) {
+    id = new ObjectId(id);
   }
 
   if (ctx.service?.entityClass?.parseId) {

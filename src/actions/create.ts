@@ -1,5 +1,5 @@
 import { Document, EJSON } from 'bson';
-import { Context } from 'moleculer';
+import Moleculer, { Context } from 'moleculer';
 import { unmergeAndValidate } from '../utils/params';
 import { isEJSON } from '../utils/ejson';
 import { MongoBubbleMetadata } from '../utils/types';
@@ -7,7 +7,7 @@ import { MongoBubbleMetadata } from '../utils/types';
 export const insertOne = {
   rest: 'POST /',
   handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
-    const repository = ctx.service?.getRepository('write');
+    const repository = await (async () => ctx.service?.getRepository('write'))();
 
     const params = unmergeAndValidate(ctx, {
       type: 'object',
@@ -25,6 +25,11 @@ export const insertOne = {
         },
       },
     });
+
+    // TODO: replcate this logic in all actions
+    if (!params.body) {
+      throw new Moleculer.Errors.MoleculerClientError('Missing body', 400, 'MISSING_BODY');
+    }
 
     // TODO: replicate this logic in all actions
     // prevents EJSON from converting BSON to JSON (ie. ObjectId to string) instead EJSON to BSON

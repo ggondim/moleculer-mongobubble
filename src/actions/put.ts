@@ -6,7 +6,7 @@ import { MongoBubbleMetadata } from '../utils/types';
 export const publish = {
   rest: 'PUT /:id/publish',
   handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('write'))();
     const id = parseIdFromParams(ctx);
 
     const result = await repository.publishById(id);
@@ -26,7 +26,7 @@ export const publish = {
 export const archive = {
   rest: 'PUT /:id/archive',
   handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('write'))();
     const id = parseIdFromParams(ctx);
 
     const result = await repository.archiveById(id);
@@ -46,7 +46,7 @@ export const archive = {
 export const unpublish = {
   rest: 'PUT /:id/unpublish',
   handler: async (ctx: Context<Document, MongoBubbleMetadata>) => {
-    const repository = await (async () => ctx.service?.getRepository())();
+    const repository = await (async () => ctx.service?.getRepository('write'))();
     const id = parseIdFromParams(ctx);
 
     const result = await repository.unpublishById(id);
